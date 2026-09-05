@@ -15,8 +15,17 @@ class ValidatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='launchpoint-validation-') as directory:
             root = Path(directory)
             subprocess.run(['git', 'init', '-q', directory], check=True)
-            content = {'index.html': '<!doctype html><html><body></body></html>',
-                       'styles.css': '', 'script.js': ''}
+            content = {
+                'package.json': '{}', 'package-lock.json': '{}',
+                'astro.config.mjs': '', 'tsconfig.json': '{}',
+                'src/pages/index.astro': '---\nimport Layout from "../layouts/BaseLayout.astro";\n---\n<Layout />',
+                'src/layouts/BaseLayout.astro': '<html><body><slot /></body></html>',
+                'src/styles/global.css': '', 'src/scripts/site.js': '',
+                'dist/index.html': '<!doctype html><html><body></body></html>',
+                '.gitignore': 'dist/\nnode_modules/\n.astro/\n',
+                **{f'src/components/{name}.astro': '' for name in
+                   ('Header', 'Hero', 'Services', 'Process', 'About', 'Contact', 'Footer')},
+            }
             content.update(files or {})
             for name in missing:
                 content.pop(name)
@@ -35,10 +44,10 @@ class ValidatorTests(unittest.TestCase):
         self.assertIn('0 warning(s)', result.stdout)
 
     def test_warning_rules_do_not_fail(self):
-        result = self.run_case({'index.html': '<html><body><a href="#">x</a>'
+        result = self.run_case({'dist/index.html': '<html><body><a href="#">x</a>'
                                 '<a href="javascript:void(0)">x</a><a href="#missing">x</a>'
                                 '<div id="same"></div><div id="same"></div></section></body></html>',
-                                'script.js': "button.textContent = 'Email sent!';\n"
+                                'src/scripts/site.js': "button.textContent = 'Email sent!';\n"
                                 "console.log('Email submitted:', emailInput.value);"})
         self.assertEqual(result.returncode, 0, result.stdout)
         for rule in ('placeholder-link', 'missing-fragment-target', 'duplicate-id',
@@ -47,7 +56,47 @@ class ValidatorTests(unittest.TestCase):
             self.assertIn(rule, result.stdout)
 
     def test_missing_source(self):
-        self.assertEqual(self.run_case(missing=('script.js',)).returncode, 1)
+        for name in ('src/scripts/site.js', 'src/pages/index.astro',
+                     'src/components/Hero.astro', 'package-lock.json'):
+            with self.subTest(name=name):
+                result = self.run_case(missing=(name,))
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn('missing-required-source', result.stdout)
+
+    def test_missing_build_output(self):
+        result = self.run_case(missing=('dist/index.html',))
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('missing-build-output-run-npm-run-build', result.stdout)
+
+    def test_component_placeholder_links(self):
+        result = self.run_case({'src/components/Hero.astro':
+                                '---\nconst text = "<a href=\'#\'>";\n---\n'
+                                '<a href="#">x</a><a href="JavaScript:void(0)">x</a>'})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(result.stdout.count('placeholder-link'), 2, result.stdout)
+        self.assertNotIn('unclosed-tag', result.stdout)
+
+    def test_cross_component_fragments_use_built_page(self):
+        result = self.run_case({
+            'src/components/Header.astro': '<a href="#contact">Contact</a>',
+            'src/components/Contact.astro': '<section id="contact"></section>',
+            'dist/index.html': '<html><body><a href="#contact">Contact</a>'
+                               '<section id="contact"></section></body></html>',
+        })
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn('0 warning(s)', result.stdout)
+
+    def test_missing_built_fragment(self):
+        result = self.run_case({'dist/index.html':
+                                '<html><body><a href="#missing">Contact</a></body></html>'})
+        self.assertIn('missing-fragment-target', result.stdout)
+
+    def test_generated_assets_are_scanned_despite_gitignore(self):
+        for value in ('ghp_' + 'A' * 36, '/' + 'Users/example/project'):
+            result = self.run_case({'dist/_astro/index.js': value})
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn('dist/_astro/index.js', result.stdout)
+            self.assertNotIn(value, result.stdout)
 
     def test_tracked_ignored_files(self):
         for name in ('.env', '.env.local', 'nested/.env.production', '.DS_Store'):

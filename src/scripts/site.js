@@ -1,3 +1,7 @@
+import * as THREE from 'three';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
 // LaunchPoint - Modern Website Script
 
 document.addEventListener('DOMContentLoaded', () => {

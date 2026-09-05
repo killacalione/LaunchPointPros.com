@@ -3,15 +3,16 @@
 ## Project purpose and milestone boundaries
 
 LaunchPoint Pros is being developed into a production-grade, conversion-focused,
-SEO-ready business website. The current site is static HTML, CSS, and JavaScript.
-Astro migration and Cloudflare hosting are future milestones, not current architecture.
+SEO-ready business website. The current site uses Astro to generate static HTML,
+with global CSS and bundled client JavaScript. Cloudflare hosting is a future milestone.
 
 - Work incrementally within the explicitly approved milestone; never start future milestones automatically.
 - Prefer small, reviewable changes and preserve working behavior unless explicitly tasked otherwise.
 - Avoid unnecessary dependencies and unrelated cleanup.
 - Use mobile-first, accessibility-aware, semantic HTML and progressive enhancement.
 - Keep performance in mind and business claims grounded in verified information.
-- For Milestone 0, preserve index.html, styles.css, and script.js byte-for-byte; document defects instead.
+- Milestone 0 is the historical static baseline. Milestone 1 migrates that baseline
+  to Astro with visual and behavioral parity; content and product changes remain deferred.
 
 ## Git safety
 
@@ -53,8 +54,11 @@ Flag existing unverified claims rather than silently treating them as fact.
 
 ## Validation and completion
 
-- Run all available validation before claiming completion: python3 scripts/validate.py,
-  python3 scripts/test_validate.py, node --check script.js when Node is available, and git diff --check.
+- Use Node 22.12+ and Python 3.11+. Install with npm ci, then run npm run check,
+  npm run build, python3 scripts/validate.py, python3 scripts/test_validate.py,
+  node --check src/scripts/site.js, and git diff --check before claiming completion.
+- Build before repository validation: the validator checks Astro sources and the
+  assembled dist/index.html and scans generated assets. Never commit dist/ or node_modules/.
 - Inspect git diff and git status, including new untracked files.
 - Verify relevant behavior in a local browser when available; distinguish static
   observations from measured results and record actual tested viewport dimensions.

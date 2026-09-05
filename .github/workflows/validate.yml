@@ -12,10 +12,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check Astro source
+        run: npm run check
+      - name: Build static site
+        run: npm run build
       - name: Validate repository
-        run: python scripts/validate.py
+        run: python3 scripts/validate.py
       - name: Test validator safety rules
-        run: python scripts/test_validate.py
+        run: python3 scripts/test_validate.py

@@ -6,49 +6,79 @@ production-grade, conversion-focused, SEO-ready site.
 ## Repository purpose
 
 This repository contains the public website and its development documentation.
-Milestone 0 establishes the foundation without changing the existing homepage.
-See [the current-site audit](docs/current-site-audit.md) for known limitations.
+Milestone 0 established the development foundation. Milestone 1 migrates the
+existing homepage to Astro while preserving its content, styling, and behavior.
+See [the historical static-site audit](docs/current-site-audit.md) for deferred
+limitations and [the M1 verification report](docs/milestone-1-report.md) for migration evidence.
 
 ## Current architecture
 
-A static homepage: `index.html`, `styles.css`, and `script.js`. There is no build
-step, framework, package manifest, or installed runtime dependency.
-The browser currently loads Outfit from Google Fonts and Three.js r134,
-GSAP 3.12.2, and ScrollTrigger 3.12.2 from cdnjs. These are external runtime
-dependencies; network/CDN failures can affect enhancement and interaction.
+Astro generates a static homepage from `src/pages/index.astro`, a shared layout,
+and seven section components. `src/styles/global.css` preserves the baseline
+stylesheet; `src/scripts/site.js` bundles the existing interactions with Three.js
+r134, GSAP 3.12.2, and ScrollTrigger 3.12.2. These scripts are served locally from
+the generated `dist/_astro/` assets. Outfit still loads from Google Fonts.
 
-The contact control simulates success and does not submit leads to a backend.
-Existing business statistics are not verified by repository evidence.
+Direct dependencies are pinned: Astro 7.3.1, GSAP 3.12.2, Three.js 0.134.0;
+development tooling uses @astrojs/check 0.9.10 and TypeScript 6.0.3.
+No server adapter, backend, or deployment integration is configured.
+
+The contact control intentionally still simulates success, logs the entered email,
+and clears it after three seconds without submitting a lead. Existing business
+statistics are not verified by repository evidence. Missing animation targets,
+navigation highlight limitations, accessibility defects, and other audit findings
+remain deferred; the extra closing section tag was removed during migration.
 
 ## Local development
 
-From the repository root, with Python 3.11 or later:
+From the repository root, use Node 22.12+ (CI uses Node 22), npm 9.6.5+, and
+Python 3.11+ for repository checks:
 
 ```sh
-python3 -m http.server 8000 --bind 127.0.0.1
+npm ci
+npm run dev -- --host 127.0.0.1
 ```
 
-Open <http://127.0.0.1:8000>. Stop the server with Ctrl+C. Internet access is
-needed for the existing CDN scripts and fonts. No global package install is needed.
+Open the local URL printed by Astro (normally <http://127.0.0.1:4321>).
+Stop the server with Ctrl+C. To test production output:
+
+```sh
+npm run build
+npm run preview -- --host 127.0.0.1
+```
+
+Internet access is needed for installation and Google Fonts. No global package
+installation is required. In a restricted sandbox, use a temporary writable cache
+with `npm ci --cache "$(mktemp -d)"`; prefix Astro commands with
+`ASTRO_TELEMETRY_DISABLED=1` if its preferences directory is unavailable.
 
 ## Validation
 
 ```sh
+npm run check
+npm run build
 python3 scripts/validate.py
 python3 scripts/test_validate.py
-node --check script.js
+node --check src/scripts/site.js
 git diff --check
+npm ls --depth=0
 ```
 
-The validator needs Python 3.11+ and Git; Node is optional for the separate
-JavaScript syntax check. GitHub Actions runs the Python validator on pushes and
-pull requests, with no deployment or secrets.
+Build before running the validator; missing `dist/index.html` is an error.
+GitHub Actions installs locked dependencies, checks and builds Astro, then runs
+the Python validator and its tests on pushes and pull requests, with no deployment
+or secrets.
 
 The validator scans tracked and non-ignored untracked files, including new files
-before staging. Safety errors exit nonzero; warnings identify deferred site issues.
+before staging, plus ignored build output. It requires the Astro source files,
+checks literal placeholder links in components, and checks assembled HTML for
+structure, duplicate IDs, and fragment targets across components. Safety errors
+exit nonzero; markup and contact warnings identify deferred site issues.
 It checks common credentials and local paths without printing matched values.
 It is neither a complete secret scanner nor a full HTML validator, and it does not
-scan Git history. Review staged content and history separately if a leak is suspected.
+scan Git history. Component checks do not interpret arbitrary Astro expressions;
+rendered checks cover the current build, so rebuild after source changes. Review
+staged content and history separately if a leak is suspected.
 Warnings do not certify the site as production-ready or its contact flow as functional.
 
 ## Development workflow
@@ -76,12 +106,13 @@ environment secrets, and logs; ignored files must not be force-added.
 
 ## Planned direction and roadmap
 
-Astro migration and Cloudflare hosting are planned future work, not implemented.
+Astro is the current architecture. M2 positioning and information architecture,
+Cloudflare hosting, and all later milestones remain future work.
 
 | Milestone | Focus |
 | --- | --- |
-| M0 | Development foundation |
-| M1 | Astro migration |
+| M0 | Development foundation — complete |
+| M1 | Astro migration — complete |
 | M2 | Positioning and information architecture |
 | M3 | Design system |
 | M4 | Homepage |

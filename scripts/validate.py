@@ -9,7 +9,13 @@ from pathlib import Path
 from urllib.parse import unquote
 
 
-REQUIRED = ('index.html', 'styles.css', 'script.js')
+REQUIRED = (
+    'package.json', 'package-lock.json', 'astro.config.mjs', 'tsconfig.json',
+    'src/pages/index.astro', 'src/layouts/BaseLayout.astro',
+    'src/styles/global.css', 'src/scripts/site.js',
+    *(f'src/components/{name}.astro' for name in
+      ('Header', 'Hero', 'Services', 'Process', 'About', 'Contact', 'Footer')),
+)
 PATTERNS = {
     'private-key': re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'),
     'github-token': re.compile(r'\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})\b'),
@@ -41,13 +47,14 @@ class Report:
 class PageChecks(HTMLParser):
     """Target explicit markup used here; optional HTML end tags may warn."""
 
-    def __init__(self, name, report):
+    def __init__(self, name, report, links_only=False):
         super().__init__(convert_charrefs=True)
         self.name = name
         self.report = report
         self.ids = set()
         self.anchors = []
         self.stack = []
+        self.links_only = links_only
 
     def warn(self, line, rule):
         self.report.emit('WARN', f'{self.name}:{line}', rule)
@@ -55,15 +62,17 @@ class PageChecks(HTMLParser):
     def handle_starttag(self, tag, attrs):
         line = self.getpos()[0]
         attrs = dict(attrs)
+        href = (attrs.get('href') or '').strip()
+        if href == '#' or href.lower().startswith('javascript:'):
+            self.warn(line, 'placeholder-link')
+        if self.links_only:
+            return  # Components are assembled before checking IDs and structure.
         element_id = attrs.get('id')
         if element_id:
             if element_id in self.ids:
                 self.warn(line, 'duplicate-id')
             self.ids.add(element_id)
-        href = (attrs.get('href') or '').strip()
-        if href == '#' or href.lower().startswith('javascript:'):
-            self.warn(line, 'placeholder-link')
-        elif href.startswith('#'):
+        if href.startswith('#') and href != '#':
             self.anchors.append((unquote(href[1:]), line))
         if tag not in VOID:
             self.stack.append((tag, line))
@@ -74,6 +83,8 @@ class PageChecks(HTMLParser):
             self.handle_endtag(tag)
 
     def handle_endtag(self, tag):
+        if self.links_only:
+            return
         line = self.getpos()[0]
         if not any(open_tag == tag for open_tag, _ in self.stack):
             self.warn(line, 'unmatched-closing-tag')
@@ -112,7 +123,19 @@ def main():
         if not (root / name).is_file():
             report.emit('ERROR', name, 'missing-required-source')
 
-    for name in sorted(tracked | untracked):
+    # Build output is ignored by Git but is the assembled, deployable page.
+    generated = set()
+    output = root / 'dist'
+    if output.is_symlink():
+        report.emit('ERROR', 'dist', 'symlink-requires-manual-safety-review')
+    elif not (output / 'index.html').is_file():
+        report.emit('ERROR', 'dist/index.html', 'missing-build-output-run-npm-run-build')
+    if output.is_dir() and not output.is_symlink():
+        generated = {str(path.relative_to(root)) for path in output.rglob('*')
+                     if path.is_file() or path.is_symlink()}
+
+    inventory = tracked | untracked | generated
+    for name in sorted(inventory):
         path = root / name
         parts = Path(name).parts
         environment_file = any(
@@ -140,14 +163,21 @@ def main():
             for match in pattern.finditer(source):
                 line = source.count('\n', 0, match.start()) + 1
                 report.emit('ERROR', f'{name}:{line}', rule)
-        if path.suffix.lower() == '.html':
-            parser = PageChecks(name, report)
+        if path.suffix.lower() in ('.html', '.astro'):
+            is_component = path.suffix.lower() == '.astro'
+            parser = PageChecks(name, report, links_only=is_component)
+            markup = source
+            if is_component:
+                # Preserve line numbers while excluding Astro frontmatter.
+                markup = re.sub(r'\A---\r?\n.*?\r?\n---(?=\r?\n|$)',
+                                lambda match: '\n' * match[0].count('\n'),
+                                source, count=1, flags=re.DOTALL)
             try:
-                parser.feed(source)
+                parser.feed(markup)
                 parser.finish()
             except (ValueError, AssertionError):
                 report.emit('WARN', name, 'markup-check-incomplete')
-        if path.suffix.lower() == '.js':
+        if path.suffix.lower() == '.js' and name not in generated:
             for line_number, line in enumerate(source.splitlines(), 1):
                 if re.search(r'\.textContent\s*=\s*[\"\']Email sent!', line):
                     report.emit('WARN', f'{name}:{line_number}', 'success-message-requires-real-backend-verification')
@@ -155,7 +185,7 @@ def main():
                     report.emit('WARN', f'{name}:{line_number}', 'contact-email-console-logging')
 
     print(f'Validation: {report.errors} error(s), {report.warnings} warning(s); '
-          f'{len(tracked | untracked)} file(s) inspected.')
+          f'{len(inventory)} file(s) inspected (including build output).')
     return 1 if report.errors else 0
 
 
